@@ -6,8 +6,8 @@ Get the coordinates to put the postcard to the door.
 from argparse import ArgumentParser
 from pathlib import Path
 from enum import Enum
-from math import sqrt, atan
-from random import seed, randint
+from math import sqrt, atan, pi
+from random import seed, randint, randrange, choice
 import logging
 
 
@@ -17,10 +17,73 @@ seed()
 BUSY_FILE = Path(__file__).parent / 'busy.csv'
 
 
-class CoordinateSystem(Enum):
-    """ Coordinate system used. """
-    CARTESIAN = 0
-    POLAR = 1
+UNITS: dict[str, dict[str, float]] = {
+    'length': {
+        # name: factor = mm in unit
+        'mm': 1.0,
+        'light-year': 9.4607e18,
+        'astronomical unit': 149597870700000.0,
+        'parsec': 3.0857e19,
+
+        # Unusual
+        'horizontal pitch': 5.08,
+        'hammer unit': 19.05,
+        'rack U': 44.45,
+        'light-ns': 299.792,
+        'metric foot': 300.0,
+        'horse': 2400.0,
+        'boat': 19000.0,
+        'Manhattan block': 80000.0,
+        'Earth radius': 6371000000.0,
+        'Siriometer': 149.6e18,
+
+        # Humorous
+        'Altuve': 1650.0,
+        'Attoparsec': 30.86,
+        'Beard-second': 10e-6,
+        'Sheppey': 1400000.0,
+        'Smoot': 1700.0,
+
+        # English
+        'line': 2.12,
+        'barleycorn': 8.47,
+        'digit': 19.05,
+        'finger': 22.23,
+        'inch': 25.4,
+        'nail': 57.15,
+        'palm': 76.2,
+        'hand': 101.6,
+        'foot': 304.8,
+        'cubit': 457.2,
+        'yard': 914.0,
+        'ell': 1143.0,
+        'fathom': 1829.0,
+        'rod': 5000.0,
+        'chain': 20116.0,
+        'furlong': 2011680.0,
+        'mile': 1610000.0,
+        'NM': 1852000.0,
+        'league': 4830000.0,
+    },
+
+    'angle': {
+        # name: factor equals half a turn
+        'rad': 0,  # means "do nothing"
+        'degree': 180.0,
+        'arcminute': 10800.0,
+        'arcsecond': 1296000.0 / 2.0,
+        'grad': 200.0,
+        'hour angle': 12.0,
+        'compass point': 16.0,
+        'binary degree': 128.0,
+        'quadrant': 2.0,
+        'sextant': 3.0,
+        'hexacontade': 30.0,
+        'diameter part': 376.991 / 2.0,
+        'zam': 112.0,
+        'Akhnam': 16.0,
+    },
+}
 
 
 class Orientation(Enum):
@@ -97,18 +160,39 @@ class Rectangle:
             atan(self.zzz / self.xxx)
         )
 
-    def get_coordinates(self, coordinate_system: CoordinateSystem) -> tuple:
+    def get_str_coordinates(self) -> str:
         """ Get coordinates. """
-        if coordinate_system is CoordinateSystem.CARTESIAN:
-            return self.get_cartesian()
+        coordinate_system = randrange(2)
 
-        if coordinate_system is CoordinateSystem.POLAR:
-            return self.get_polar()
+        if coordinate_system == 0:
+            # cartesian
+            cartesian_coord = list(self.get_cartesian())
+
+            x_name, x_factor = choice(list(UNITS['length'].items()))
+            y_name, y_factor = choice(list(UNITS['length'].items()))
+
+            cartesian_coord[0] /= x_factor
+            cartesian_coord[1] /= y_factor
+
+            return f'(x = {cartesian_coord[0]} {x_name}, y = {cartesian_coord[1]} {y_name})'
+
+        if coordinate_system == 1:
+            polar_coord = list(self.get_polar())
+
+            r_name, r_factor = choice(list(UNITS['length'].items()))
+            phi_name, phi_factor = choice(list(UNITS['angle'].items()))
+
+            polar_coord[0] /= r_factor
+
+            if phi_factor != 0:
+                polar_coord[1] *= (phi_factor / pi)
+
+            return f'(r = {polar_coord[0]} {r_name}, phi = {polar_coord[1]} {phi_name})'
 
         raise NotImplementedError(f'Unknown coordinate system: {coordinate_system}')
 
 
-THE_DOOR = Rectangle(0, 0, 900, 2000)
+THE_DOOR = Rectangle(0, 0, 800, 2000)
 
 
 class Postcard(Rectangle):
@@ -234,33 +318,12 @@ def main():
         help='postcard is in landscape orientation',
     )
 
-    parser.add_argument(
-        '-c',
-        '--coordinate-system',
-        help='Coordinate system to use (default: cartesian)',
-    )
-
     args = parser.parse_args()
 
     if not args.landscape and not args.portrait:
         raise ValueError('Please specify if it is landscape or portrait (no default)')
 
     orientation = Orientation.PORTRAIT if args.portrait else Orientation.LANDSCAPE
-
-    if args.coordinate_system is None:
-        args.coordinate_system = 'cartesian'
-
-    if args.coordinate_system.upper() not in dir(CoordinateSystem):
-        raise ValueError(
-            f'Bad coordinate system "{args.coordinate_system}", pick from: '
-            + ', '.join(
-                value.lower()
-                for value in dir(CoordinateSystem)
-                if not value.startswith('_')
-            )
-        )
-
-    coordinate_system = CoordinateSystem[args.coordinate_system.upper()]
 
     log_levels = [logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG]
     if args.verbose is None:
@@ -281,7 +344,7 @@ def main():
     if not args.dryrun:
         write_busy(existing_postcards)
 
-    print(f'{postcard.get_coordinates(coordinate_system)=}')
+    print(f'coordinates: {postcard.get_str_coordinates()}')
 
 
 if __name__ == '__main__':
